@@ -59,7 +59,7 @@ describe("掛け算", () => {
   });
 
   test("桁あふれERR", () => {
-    expect(() => evaluate("12345678*8")).toThrow(OverflowError); // 98,765,424 -> OK（例）※要件次第で変える
+    expect(() => evaluate("12345678*9")).toThrow(OverflowError); // 98,765,424 -> OK（例）※要件次第で変える
     expect(() => evaluate("99999999*2")).toThrow(OverflowError);
   });
 });
