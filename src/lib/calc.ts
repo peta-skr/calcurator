@@ -1,4 +1,8 @@
 export function evaluate(expression: string): number {
+  if (!expression || expression.trim() === "") {
+    throw new Error("空の式です");
+  }
+
   let tokens = tokenizeExpression(expression);
   let rpn = convertToRPN(tokens);
   let result = evaluateRPN(rpn);
@@ -14,142 +18,192 @@ interface Token {
 }
 
 function tokenizeExpression(expression: string): Token[] {
-  let tokens: Token[] = new Array();
-  let tempNum = "";
-  let numTurn = false; // 負の数を扱うために必要なフラグ
+  let tokens: Token[] = [];
+  let i = 0;
 
-  for (let i of expression) {
-    // 空白スキップ
-    if (/\s/.test(i)) continue;
+  while (i < expression.length) {
+    const char = expression[i];
 
-    if (isNumeric(i)) {
-      tempNum += i;
-      numTurn = true;
-    } else {
-      // エラーとかにする方が理想的なので、後で修正する
-      if (!["+", "-", "*", "/"].includes(i))
-        throw new Error("予期していない文字");
-
-      if (numTurn) {
-        let numToken: Token = { type: "Number", value: tempNum };
-        let opToken: Token = { type: "Operator", value: i };
-        tokens.push(numToken);
-        tokens.push(opToken);
-        tempNum = "";
-        numTurn = false;
-      } else {
-        tempNum += i;
-      }
+    // 空白をスキップ
+    if (/\s/.test(char)) {
+      i++;
+      continue;
     }
-  }
 
-  if (tempNum != "") {
-    let numToken: Token = { type: "Number", value: tempNum };
-    tokens.push(numToken);
+    // 数字の場合
+    if (isNumeric(char)) {
+      let numStr = "";
+      while (i < expression.length && isNumeric(expression[i])) {
+        numStr += expression[i];
+        i++;
+      }
+      tokens.push({ type: "Number", value: numStr });
+      continue;
+    }
+
+    // 演算子の場合
+    if (["+", "-", "*", "/"].includes(char)) {
+      // 単項マイナスのチェック
+      if (char === "-" && isUnaryMinus(tokens)) {
+        // 次の数字を読み取って負数として処理
+        i++;
+        let numStr = "-";
+
+        // 空白スキップ
+        while (i < expression.length && /\s/.test(expression[i])) {
+          i++;
+        }
+
+        // 数字を読み取り
+        while (i < expression.length && isNumeric(expression[i])) {
+          numStr += expression[i];
+          i++;
+        }
+
+        if (numStr === "-") {
+          throw new Error("不正な式: 単項マイナスの後に数字がありません");
+        }
+
+        tokens.push({ type: "Number", value: numStr });
+      } else {
+        tokens.push({ type: "Operator", value: char });
+        i++;
+      }
+      continue;
+    }
+
+    throw new Error(`不正な文字: ${char}`);
   }
 
   return tokens;
 }
 
-function isNumeric(str: string): boolean {
-  // !isNaN(Number(str))では空白と空文字がtrueになってしまうため
-  if (str == "" || str == " " || str == "　") return false;
-  return !isNaN(Number(str));
+function isUnaryMinus(tokens: Token[]): boolean {
+  // 式の先頭、または直前が演算子の場合は単項マイナス
+  return tokens.length === 0 || tokens[tokens.length - 1].type === "Operator";
+}
+
+function isNumeric(char: string): boolean {
+  return /^[0-9]$/.test(char);
 }
 
 function convertToRPN(tokens: Token[]): Token[] {
-  let RPN: Token[] = [];
-  let opStack: Token[] = [];
+  const rpn: Token[] = [];
+  const opStack: Token[] = [];
 
-  for (let token of tokens) {
+  for (const token of tokens) {
     switch (token.type) {
       case "Number":
-        RPN.push(token);
+        rpn.push(token);
         break;
       case "Operator":
-        if (opStack.length == 0) {
-          opStack.push(token);
-        } else if (
-          checkOpPriority(token.value, opStack[opStack.length - 1].value)
+        // スタック上の演算子で、現在の演算子以上の優先度のものを出力
+        while (
+          opStack.length > 0 &&
+          getPriority(opStack[opStack.length - 1].value) >=
+            getPriority(token.value)
         ) {
-          let op = opStack.pop();
-          if (op !== undefined) {
-            RPN.push(op);
-          }
-          opStack.push(token);
-        } else {
-          opStack.push(token);
+          const op = opStack.pop();
+          if (op) rpn.push(op);
         }
+        opStack.push(token);
         break;
       default:
-        // エラーの方が良いので、後で修正する。
-        throw new Error("予期していない文字です");
+        throw new Error("予期しないトークンタイプ");
     }
   }
 
+  // 残りの演算子をすべて出力
   while (opStack.length > 0) {
-    let op = opStack.pop();
-    if (op !== undefined) {
-      RPN.push(op);
-    }
+    const op = opStack.pop();
+    if (op) rpn.push(op);
   }
 
-  return RPN;
+  return rpn;
 }
 
-function checkOpPriority(op1: string, op2: string): boolean {
-  let p1 = ["*", "/"].includes(op1) ? 2 : 1;
-  let p2 = ["*", "/"].includes(op2) ? 2 : 1;
-
-  return p1 <= p2;
+function getPriority(operator: string): number {
+  switch (operator) {
+    case "+":
+    case "-":
+      return 1;
+    case "*":
+    case "/":
+      return 2;
+    default:
+      return 0;
+  }
 }
 
 function evaluateRPN(RPN: Token[]): number {
-  let numStack: number[] = [];
+  const stack: number[] = [];
 
-  for (let token of RPN) {
+  for (const token of RPN) {
     switch (token.type) {
       case "Number":
-        numStack.push(Number(token.value));
+        const num = parseInt(token.value, 10);
+        if (isNaN(num)) {
+          throw new Error(`不正な数値: ${token.value}`);
+        }
+        stack.push(num);
         break;
       case "Operator":
-        let right = numStack.pop();
-        let left = numStack.pop();
+        if (stack.length < 2) {
+          throw new Error("演算子に対してオペランドが不足しています");
+        }
 
-        if (right == undefined || left == undefined) {
-          // ちゃんとしたエラーに修正する
-          throw new Error("予期していないエラー");
+        const right = stack.pop();
+        const left = stack.pop();
+        let result: number;
+
+        if (right === undefined || left === undefined) {
+          throw new Error("正常にオペランドが取得できませんでした");
         }
 
         switch (token.value) {
           case "+":
-            numStack.push(left + right);
+            result = left + right;
             break;
           case "-":
-            numStack.push(left - right);
+            result = left - right;
             break;
           case "*":
-            numStack.push(left * right);
+            result = left * right;
             break;
           case "/":
-            if (right == 0) throw new DivisionByZeroError("0割はエラーです");
-            numStack.push(Math.trunc(left / right));
+            if (right == 0) {
+              throw new DivisionByZeroError("ゼロで割ることはできません");
+            }
+            result = Math.trunc(left / right);
             break;
+          default:
+            throw new Error(`未知の演算子: ${token.value}`);
         }
+
+        // 中間結果の8桁チェック
+        validateResult(result);
+        stack.push(result);
+        break;
+      default:
+        throw new Error("予期しないトークンタイプ");
     }
   }
 
-  if (numStack.length != 1) {
-    // ちゃんとしたエラーに修正する
-    throw new Error("予期していないエラー");
+  if (stack.length != 1) {
+    throw new Error("式が不正です");
   }
 
-  return numStack[0];
+  return stack[0];
 }
 
 function validateResult(num: number): number {
-  let len = Math.abs(num).toString().length;
-  if (len > 8) throw new OverflowError("ERR（オーバーフロー）");
+  if (!Number.isFinite(num)) {
+    throw new OverflowError("計算結果が無限大です");
+  }
+
+  if (Math.abs(num) > 99999999) {
+    throw new OverflowError("計算結果が8桁を超えました");
+  }
 
   return num;
 }
@@ -157,13 +211,13 @@ function validateResult(num: number): number {
 export class OverflowError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = this.constructor.name;
+    this.name = "OverflowError";
   }
 }
 
 export class DivisionByZeroError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = this.constructor.name;
+    this.name = "DivisionByZeroError";
   }
 }
